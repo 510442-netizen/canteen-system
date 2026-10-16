@@ -47,7 +47,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-600 mb-1">電話末三碼 (取餐核對用) *</label>
-                    <input type="text" id="custPhone" maxlength="3" placeholder="例如：567" class="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <input type="text" id="custPhone" maxlength="4" placeholder="例如：567" class="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
             </div>
             <div class="flex gap-2 pt-2">
@@ -59,9 +59,8 @@
 
     <script>
         let menuItems = [];
-        let cart = {}; // { itemId: quantity }
+        let cart = {}; 
 
-        // 檢查快取是否有未完成的近期訂單
         function checkRecentOrder() {
             const lastOrderId = localStorage.getItem('my_last_order_id');
             if (lastOrderId) {
@@ -92,7 +91,7 @@
 
             container.innerHTML = menuItems.map(item => {
                 const qty = cart[item.id] || 0;
-                const isAvailable = item.available;
+                const isAvailable = item.is_available;
 
                 return `
                     <div class="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center ${!isAvailable ? 'opacity-60 bg-gray-50' : ''}">
@@ -136,11 +135,11 @@
 
             for (let itemId in cart) {
                 const item = menuItems.find(i => i.id == itemId);
-                if (item && item.available) {
+                if (item && item.is_available) {
                     count += cart[itemId];
                     total += item.price * cart[itemId];
                 } else {
-                    delete cart[itemId]; // 若餐點已停售，自動從購物車移除
+                    delete cart[itemId];
                 }
             }
 
@@ -177,7 +176,7 @@
             const phone = document.getElementById('custPhone').value.trim();
 
             if (!name || !phone) {
-                alert('請填寫姓名與電話末三碼！');
+                alert('請填寫姓名與電話末碼！');
                 return;
             }
 
@@ -185,6 +184,8 @@
                 item_id: parseInt(id),
                 quantity: cart[id]
             }));
+
+            const idempotencyKey = `idem_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.disabled = true;
@@ -195,8 +196,9 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        idempotency_key: idempotencyKey,
                         customer_name: name,
-                        customer_phone: phone,
+                        phone_suffix: phone,
                         items: items
                     })
                 });
@@ -210,12 +212,11 @@
                 }
 
                 const data = await res.json();
-                const orderId = data.id || data.order_id;
+                const orderId = data.order_id || data.id;
                 
-                // 儲存訂單編號到瀏覽器快取 (localStorage)
                 localStorage.setItem('my_last_order_id', orderId);
 
-                alert(`訂單送出成功！您的單號是 #${orderId}`);
+                alert(`訂單送出成功！您的單號是 #${data.order_number || orderId}`);
                 window.location.href = `status.html?id=${orderId}`;
 
             } catch (e) {
@@ -226,7 +227,6 @@
             }
         }
 
-        // 初始化與每 10 秒自動刷新菜單
         checkRecentOrder();
         fetchMenu();
         setInterval(fetchMenu, 10000);
