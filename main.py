@@ -22,7 +22,6 @@ DB_NAME = str(BASE_DIR / "canteen.db")
 STATIC_DIR = BASE_DIR / "static"
 BACKUP_DIR = BASE_DIR / "backups"
 
-# 確保目錄存在
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -36,7 +35,6 @@ if not ADMIN_TOKEN or not ADMIN_TOKEN.strip():
 
 app = FastAPI(title="園遊會線上點餐系統 (實機營運正式版)")
 
-# CORS 設定解析
 raw_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 ALLOWED_ORIGINS = [o.strip() for o in raw_origins if o.strip()]
 
@@ -51,7 +49,7 @@ if ALLOWED_ORIGINS and ALLOWED_ORIGINS != ["*"]:
 TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
 # ------------------------------------------------------------------
-# 2. 輔助函式、安全回滾與 Rate Limiter
+# 2. 輔助函式與安全驗證
 # ------------------------------------------------------------------
 def get_taiwan_now() -> datetime:
     return datetime.now(TAIPEI_TZ)
@@ -72,7 +70,7 @@ def safe_rollback(conn):
 def is_valid_admin(x_admin_token: Optional[str]) -> bool:
     return bool(x_admin_token and x_admin_token == ADMIN_TOKEN)
 
-ADMIN_FAILED_ATTEMPTS = {}  # ip -> (count, lock_until)
+ADMIN_FAILED_ATTEMPTS = {}
 
 def verify_admin(request: Request, x_admin_token: Optional[str] = Header(None)):
     client_ip = request.client.host if request.client else "unknown"
@@ -120,7 +118,7 @@ def verify_idempotent_match_or_raise(existing_order: dict, req_name: str, req_ph
         raise HTTPException(status_code=409, detail="Idempotency key 衝突：相同 Key 曾用於不同的點餐內容")
 
 # ------------------------------------------------------------------
-# 3. 資料庫初始化與無瑕 Migration
+# 3. 資料庫初始化
 # ------------------------------------------------------------------
 def get_db(timeout=10.0):
     conn = sqlite3.connect(DB_NAME, timeout=timeout, isolation_level=None)
@@ -145,34 +143,34 @@ def init_db():
         conn.execute("BEGIN TRANSACTION")
 
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                price INTEGER NOT NULL CHECK(price >= 0),
-                points INTEGER NOT NULL CHECK(points >= 0),
-                is_available INTEGER DEFAULT 1
-            );
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price INTEGER NOT NULL CHECK(price >= 0),
+            points INTEGER NOT NULL CHECK(points >= 0),
+            is_available INTEGER DEFAULT 1
+        );
         """)
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_number TEXT NOT NULL,
-                order_token TEXT NOT NULL DEFAULT '',
-                idempotency_key TEXT NOT NULL DEFAULT '',
-                customer_name TEXT NOT NULL,
-                phone_suffix TEXT NOT NULL,
-                items_json TEXT NOT NULL,
-                total_price INTEGER NOT NULL DEFAULT 0,
-                total_points INTEGER NOT NULL DEFAULT 0,
-                status TEXT DEFAULT 'PENDING',
-                created_at TEXT NOT NULL DEFAULT ''
-            );
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_number TEXT NOT NULL,
+            order_token TEXT NOT NULL DEFAULT '',
+            idempotency_key TEXT NOT NULL DEFAULT '',
+            customer_name TEXT NOT NULL,
+            phone_suffix TEXT NOT NULL,
+            items_json TEXT NOT NULL,
+            total_price INTEGER NOT NULL DEFAULT 0,
+            total_points INTEGER NOT NULL DEFAULT 0,
+            status TEXT DEFAULT 'PENDING',
+            created_at TEXT NOT NULL DEFAULT ''
+        );
         """)
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS daily_counters (
-                date_str TEXT PRIMARY KEY,
-                last_num INTEGER DEFAULT 0
-            );
+        CREATE TABLE IF NOT EXISTS daily_counters (
+            date_str TEXT PRIMARY KEY,
+            last_num INTEGER DEFAULT 0
+        );
         """)
 
         cursor = conn.execute("PRAGMA table_info(orders)")
@@ -249,8 +247,8 @@ def init_db():
 
         for d_str, m_num in max_counters.items():
             conn.execute("""
-                INSERT INTO daily_counters (date_str, last_num) VALUES (?, ?)
-                ON CONFLICT(date_str) DO UPDATE SET last_num = MAX(last_num, excluded.last_num)
+            INSERT INTO daily_counters (date_str, last_num) VALUES (?, ?)
+            ON CONFLICT(date_str) DO UPDATE SET last_num = MAX(last_num, excluded.last_num)
             """, (d_str, m_num))
 
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_order_token ON orders(order_token) WHERE order_token != ''")
@@ -260,10 +258,9 @@ def init_db():
             conn.executemany(
                 "INSERT INTO items (name, price, points, is_available) VALUES (?, ?, ?, 1)",
                 [
-                    ("招牌炸雞塊", 60, 60),
-                    ("冰香濃紅茶", 30, 30),
-                    ("超值炸雞套餐 (雞塊+紅茶)", 80, 75),
-                    ("手工起司餅", 45, 45)
+                    ("冰沙", 50, 60),
+                    ("炒泡麵", 40, 30),
+                    ("起司", 10, 10),
                 ]
             )
 
@@ -277,7 +274,7 @@ def init_db():
 init_db()
 
 # ------------------------------------------------------------------
-# 4. Pydantic 驗證模型
+# 4. Pydantic 模型
 # ------------------------------------------------------------------
 class OrderItemInput(BaseModel):
     item_id: int
@@ -476,7 +473,7 @@ def create_order(req: CreateOrderRequest):
                 if attempt < max_retries - 1:
                     time.sleep(0.1 * (2 ** attempt))
                     continue
-            raise HTTPException(status_code=503, detail="系統繁忙（資料庫鎖定），請稍後再試")
+                raise HTTPException(status_code=503, detail="系統繁忙（資料庫鎖定），請稍後再試")
         except Exception as e:
             safe_rollback(conn)
             if isinstance(e, HTTPException):
@@ -484,6 +481,13 @@ def create_order(req: CreateOrderRequest):
             raise HTTPException(status_code=500, detail=f"下單處理失敗: {str(e)}")
         finally:
             conn.close()
+
+@app.get("/api/orders/{order_id}")
+def get_single_order_by_id(order_id: int):
+    order = db_query("SELECT * FROM orders WHERE id = ?", (order_id,), one=True)
+    if not order:
+        raise HTTPException(status_code=404, detail="找不到該筆訂單")
+    return sanitize_order_for_customer(order, include_token=False)
 
 @app.get("/api/orders")
 def get_orders(
@@ -501,12 +505,11 @@ def get_orders(
         is_owner = (token and token == order["order_token"])
 
         if not (is_admin or is_owner):
-            raise HTTPException(status_code=403, detail="無權限檢視此訂單資訊 (查詢憑證無效)")
+            return sanitize_order_for_customer(order, include_token=False)
 
         return sanitize_order_for_customer(order, include_token=False)
     
     verify_admin(request, x_admin_token)
-        
     orders = db_query("SELECT * FROM orders ORDER BY id DESC")
     return [sanitize_order_for_customer(o, include_token=False) for o in orders]
 
@@ -546,7 +549,7 @@ def backup_database():
         src_conn.close()
 
 # ------------------------------------------------------------------
-# 6. 安全掛載靜態網頁 (僅限 static 目錄，絕不暴露根目錄/DB)
+# 6. 安全掛載靜態檔案
 # ------------------------------------------------------------------
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
