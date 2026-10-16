@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>園遊會攤位 - 廚房與櫃檯管理後台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+
+    <!-- 登入彈窗 Modal -->
+    <div id="loginModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div class="text-center mb-5">
+                <div class="text-3xl mb-1">🔑</div>
+                <h2 class="text-lg font-bold text-white">攤位管理者登入</h2>
+                <p class="text-xs text-slate-400 mt-1">請輸入 ADMIN_TOKEN 啟動管理看板</p>
+            </div>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <input type="password" id="adminTokenInput" placeholder="請輸入管理員金鑰" autocomplete="current-password"
+                        class="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-xl text-white text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
+                </div>
+                <div id="loginError" class="hidden text-xs font-semibold text-rose-400 text-center"></div>
+                <button type="submit" 
+                    class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg transition active:scale-95">
+                    進入管理看板
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 主介面 Container -->
+    <div class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+
+        <!-- 頁首 Header & 營收統計欄 -->
+        <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800/80 border border-slate-700/60 p-4 rounded-2xl backdrop-blur-md sticky top-2 z-30 shadow-xl">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl">🍳</span>
+                <div>
+                    <h1 class="text-lg font-black tracking-tight text-white flex items-center gap-2">
+                        攤位接單與備餐看板
+                        <span id="liveStatus" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1"></span> 5s 自動同步
+                        </span>
+                    </h1>
+                    <p class="text-xs text-slate-400">園遊會現場實時訂單處理系統</p>
+                </div>
+            </div>
+
+            <!-- 頂部今日統計指標 -->
+            <div class="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+                <div class="bg-slate-900/60 border border-slate-700/50 p-2.5 rounded-xl">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">今日總營收</div>
+                    <div class="text-base sm:text-lg font-black text-emerald-400 mt-0.5">$<span id="statRevenue">0</span></div>
+                </div>
+                <div class="bg-slate-900/60 border border-slate-700/50 p-2.5 rounded-xl">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">今日點數</div>
+                    <div class="text-base sm:text-lg font-black text-indigo-400 mt-0.5"><span id="statPoints">0</span> <span class="text-xs">點</span></div>
+                </div>
+                <div class="bg-slate-900/60 border border-slate-700/50 p-2.5 rounded-xl">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">待處理訂單</div>
+                    <div class="text-base sm:text-lg font-black text-amber-400 mt-0.5"><span id="statPending">0</span> <span class="text-xs">筆</span></div>
+                </div>
+            </div>
+
+            <!-- 功能按鈕列 (線上備份 + 登出) -->
+            <div class="flex justify-end space-x-2">
+                <button onclick="triggerBackup()" class="text-xs text-slate-300 hover:text-emerald-400 px-3 py-1.5 border border-slate-700 hover:border-emerald-500/50 rounded-lg transition bg-slate-900/40">
+                    💾 在線備份 DB
+                </button>
+                <button onclick="logout()" class="text-xs text-slate-400 hover:text-rose-400 px-3 py-1.5 border border-slate-700 hover:border-rose-500/50 rounded-lg transition">
+                    登出金鑰
+                </button>
+            </div>
+        </header>
+
+        <!-- 主區域：左側訂單看板，右側商品開關 -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+
+            <!-- 左側：訂單看板 -->
+            <main class="lg:col-span-3 space-y-4">
+                
+                <!-- 控制區：狀態 Filter Tabs + 顧客/號碼即時搜尋列 -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-800/40 p-2 rounded-2xl border border-slate-800">
+                    
+                    <!-- 頁籤 Filter Tabs -->
+                    <div class="flex space-x-1.5 overflow-x-auto pb-1 sm:pb-0 text-xs font-bold scrollbar-none">
+                        <button onclick="setFilter('ALL')" id="tab-ALL" class="tab-btn px-3.5 py-2 rounded-xl bg-indigo-600 text-white shadow">全部</button>
+                        <button onclick="setFilter('PENDING')" id="tab-PENDING" class="tab-btn px-3.5 py-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white">⏳ 待備餐</button>
+                        <button onclick="setFilter('IN_PROGRESS')" id="tab-IN_PROGRESS" class="tab-btn px-3.5 py-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white">🔥 製作中</button>
+                        <button onclick="setFilter('READY')" id="tab-READY" class="tab-btn px-3.5 py-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white">✅ 可取餐</button>
+                        <button onclick="setFilter('COMPLETED')" id="tab-COMPLETED" class="tab-btn px-3.5 py-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white">🎉 已完成</button>
+                    </div>
+
+                    <!-- 🔍 即時搜尋輸入框 (針對手機沒電同學速查) -->
+                    <div class="relative min-w-[200px]">
+                        <input type="text" id="searchInput" oninput="handleSearchInput()" placeholder="🔍 搜尋號碼 / 姓名 / 手機末碼..."
+                            class="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                </div>
+
+                <!-- 訂單列表容器 -->
+                <div id="ordersContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="col-span-full text-center py-12 text-slate-500">
+                        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent mb-2"></div>
+                        <p class="text-xs">載入現場訂單中...</p>
+                    </div>
+                </div>
+            </main>
+
+            <!-- 右側：餐點上下架控制面板 -->
+            <aside class="space-y-4">
+                <div class="bg-slate-800/80 border border-slate-700/60 p-4 rounded-2xl shadow-xl space-y-4">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-700">
+                        <h2 class="text-sm font-bold text-white flex items-center gap-1.5">
+                            <span>📦</span> 餐點完售管理
+                        </h2>
+                        <button onclick="fetchAdminItems()" class="text-[11px] text-indigo-400 hover:text-indigo-300">↻ 刷新</button>
+                    </div>
+                    <p class="text-[11px] text-slate-400 leading-relaxed">售完點擊「暫停販售」，點餐頁面將立即隱藏該餐點：</p>
+                    <div id="adminItemsList" class="space-y-2.5">
+                        <div class="animate-pulse text-xs text-slate-500 py-4 text-center">載入菜單狀態...</div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script>
+        const currentPort = window.location.port;
+        const defaultApiHost = (currentPort === '5500' || currentPort === '3000' || currentPort === '5000') 
+            ? `${window.location.protocol}//${window.location.hostname}:8000/api`
+            : `/api`;
+
+        const CONFIG = {
+            API_BASE: window.ENV_API_BASE || defaultApiHost
+        };
+
+        let adminToken = sessionStorage.getItem("admin_token") || "";
+        let currentFilter = "ALL";
+        let searchTerm = "";
+        let allOrders = [];
+        let refreshTimer = null;
+
+        const STATUS_ACTIONS = {
+            "PENDING": { next: "IN_PROGRESS", btnText: "🔥 開始製作", btnClass: "bg-indigo-600 hover:bg-indigo-500 text-white" },
+            "IN_PROGRESS": { next: "READY", btnText: "📢 通知取餐！", btnClass: "bg-emerald-600 hover:bg-emerald-500 text-white animate-pulse" },
+            "READY": { next: "COMPLETED", btnText: "🎉 完成交付", btnClass: "bg-slate-700 hover:bg-slate-600 text-slate-200" }
+        };
+
+        function getTaipeiTodayStr() {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
+        }
+
+        function getHeaders() {
+            return {
+                "Content-Type": "application/json",
+                "X-Admin-Token": adminToken
+            };
+        }
+
+        function setLiveStatus(isOnline, text = "") {
+            const badge = document.getElementById("liveStatus");
+            if (!badge) return;
+            if (isOnline) {
+                badge.className = "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1"></span> 5s 自動同步`;
+            } else {
+                badge.className = "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping mr-1"></span> ${text || '網路重連中...'}`;
+            }
+        }
+
+        function checkAuth() {
+            if (!adminToken) {
+                document.getElementById("loginModal").classList.remove("hidden");
+            } else {
+                document.getElementById("loginModal").classList.add("hidden");
+                startDashboard();
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const input = document.getElementById("adminTokenInput").value.trim();
+            const errDiv = document.getElementById("loginError");
+            errDiv.classList.add("hidden");
+
+            if (!input) return;
+
+            adminToken = input;
+            try {
+                const res = await fetch(`${CONFIG.API_BASE}/admin/items`, { headers: getHeaders() });
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) throw new Error("金鑰錯誤，存取被拒");
+                    if (res.status === 429) throw new Error("嘗試次數過多，請於 1 分鐘後再試");
+                    throw new Error(`驗證失敗 (HTTP ${res.status})`);
+                }
+
+                sessionStorage.setItem("admin_token", adminToken);
+                document.getElementById("loginModal").classList.add("hidden");
+                startDashboard();
+            } catch (err) {
+                errDiv.textContent = err.message;
+                errDiv.classList.remove("hidden");
+                adminToken = "";
+            }
+        }
+
+        function logout() {
+            sessionStorage.removeItem("admin_token");
+            adminToken = "";
+            if (refreshTimer) clearInterval(refreshTimer);
+            checkAuth();
+        }
+
+        async function triggerBackup() {
+            try {
+                const res = await fetch(`${CONFIG.API_BASE}/admin/backup`, {
+                    method: "POST",
+                    headers: getHeaders()
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                alert(`✅ ${data.message}！\n檔案：${data.file}`);
+            } catch (err) {
+                alert(`❌ 備份失敗：${err.message}`);
+            }
+        }
+
+        function startDashboard() {
+            fetchOrders();
+            fetchAdminItems();
+
+            if (refreshTimer) clearInterval(refreshTimer);
+            refreshTimer = setInterval(() => {
+                fetchOrders(true);
+            }, 5000);
+        }
+
+        async function fetchOrders(isSilent = false) {
+            try {
+                const res = await fetch(`${CONFIG.API_BASE}/orders`, { headers: getHeaders() });
+                if (res.status === 401 || res.status === 403) {
+                    logout();
+                    return;
+                }
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                allOrders = await res.json();
+                setLiveStatus(true);
+                updateStats();
+                renderOrders();
+            } catch (err) {
+                setLiveStatus(false, "連線中斷重試中");
+                if (!isSilent) {
+                    document.getElementById("ordersContainer").innerHTML = '';
+                    const errBox = document.createElement("div");
+                    errBox.className = "col-span-full text-center py-8 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-xs";
+                    errBox.textContent = `讀取訂單失敗：${err.message}`;
+                    document.getElementById("ordersContainer").appendChild(errBox);
+                }
+            }
+        }
+
+        async function fetchAdminItems() {
+            try {
+                const res = await fetch(`${CONFIG.API_BASE}/admin/items`, { headers: getHeaders() });
+                if (res.status === 401 || res.status === 403) {
+                    logout();
+                    return;
+                }
+                if (!res.ok) return;
+                const items = await res.json();
+                renderAdminItems(items);
+            } catch (err) {
+                console.error("無法載入餐點狀態", err);
+            }
+        }
+
+        function updateStats() {
+            let revenue = 0;
+            let points = 0;
+            let pendingCount = 0;
+            const todayStr = getTaipeiTodayStr();
+
+            allOrders.forEach(o => {
+                const isToday = o.created_at && o.created_at.startsWith(todayStr);
+                if (isToday && o.status !== "CANCELLED") {
+                    revenue += o.total_price;
+                    points += o.total_points;
+                }
+                if (isToday && (o.status === "PENDING" || o.status === "IN_PROGRESS")) {
+                    pendingCount++;
+                }
+            });
+
+            document.getElementById("statRevenue").textContent = revenue;
+            document.getElementById("statPoints").textContent = points;
+            document.getElementById("statPending").textContent = pendingCount;
+        }
+
+        function setFilter(filter) {
+            currentFilter = filter;
+            document.querySelectorAll(".tab-btn").forEach(btn => {
+                btn.className = "tab-btn px-3.5 py-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white";
+            });
+            const activeBtn = document.getElementById(`tab-${filter}`);
+            if (activeBtn) {
+                activeBtn.className = "tab-btn px-3.5 py-2 rounded-xl bg-indigo-600 text-white shadow";
+            }
+            renderOrders();
+        }
+
+        function handleSearchInput() {
+            searchTerm = document.getElementById("searchInput").value.trim().toLowerCase();
+            renderOrders();
+        }
+
+        function renderOrders() {
+            const container = document.getElementById("ordersContainer");
+            const filtered = allOrders.filter(o => {
+                const matchStatus = (currentFilter === "ALL") || (o.status === currentFilter);
+                if (!matchStatus) return false;
+
+                if (!searchTerm) return true;
+                const matchNum = o.order_number ? o.order_number.toLowerCase().includes(searchTerm) : false;
+                const matchName = o.customer_name ? o.customer_name.toLowerCase().includes(searchTerm) : false;
+                const matchPhone = o.phone_suffix ? o.phone_suffix.includes(searchTerm) : false;
+
+                return matchNum || matchName || matchPhone;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center py-16 bg-slate-800/40 border border-slate-700/50 rounded-2xl text-slate-500 text-xs">
+                        ${searchTerm ? `找不到符合「${searchTerm}」的訂單` : `目前沒有 ${currentFilter === "ALL" ? "" : currentFilter} 狀態的訂單`}
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = '';
+
+            filtered.forEach(order => {
+                const card = document.createElement("div");
+                card.className = "bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col justify-between space-y-3 hover:border-slate-600 transition";
+
+                // Header: 流水號 + 顧客資訊
+                const header = document.createElement("div");
+                header.className = "flex items-start justify-between border-b border-slate-700/80 pb-2.5";
+
+                const numBox = document.createElement("div");
+                numBox.className = "flex items-baseline space-x-2";
+                
+                const numSpan = document.createElement("span");
+                numSpan.className = "text-3xl font-black text-indigo-400 tracking-tight";
+                numSpan.textContent = `#${order.order_number}`;
+
+                const customerSpan = document.createElement("span");
+                customerSpan.className = "text-xs font-semibold text-slate-300";
+                customerSpan.textContent = `${order.customer_name} (${order.phone_suffix})`;
+
+                numBox.appendChild(numSpan);
+                numBox.appendChild(customerSpan);
+
+                const statusBadge = document.createElement("span");
+                statusBadge.className = `px-2.5 py-1 rounded-full text-[11px] font-extrabold ${getStatusStyle(order.status)}`;
+                statusBadge.textContent = getStatusText(order.status);
+
+                header.appendChild(numBox);
+                header.appendChild(statusBadge);
+
+                // 餐點明細 (安全 DOM 節點)
+                const itemList = document.createElement("div");
+                itemList.className = "space-y-1.5 py-1 text-xs text-slate-200 flex-1";
+
+                order.items.forEach(item => {
+                    const row = document.createElement("div");
+                    row.className = "flex justify-between items-center font-medium";
+
+                    const nameSpan = document.createElement("span");
+                    nameSpan.textContent = item.name;
+
+                    const qtySpan = document.createElement("span");
+                    qtySpan.className = "font-bold text-indigo-300";
+                    qtySpan.textContent = `x ${item.quantity}`;
+
+                    row.appendChild(nameSpan);
+                    row.appendChild(qtySpan);
+                    itemList.appendChild(row);
+                });
+
+                // 底部金額與時間 (安全 DOM 節點)
+                const meta = document.createElement("div");
+                meta.className = "flex justify-between items-center text-[11px] text-slate-400 pt-2 border-t border-slate-700/60";
+
+                const totalSpan = document.createElement("span");
+                totalSpan.textContent = "總計: ";
+                const priceStrong = document.createElement("strong");
+                priceStrong.className = "text-white text-sm";
+                priceStrong.textContent = `$${order.total_price}`;
+                totalSpan.appendChild(priceStrong);
+                totalSpan.appendChild(document.createTextNode(` (${order.total_points}點)`));
+
+                const timeSpan = document.createElement("span");
+                timeSpan.className = "text-[10px] text-slate-500";
+                timeSpan.textContent = order.created_at.split(' ')[1] || '';
+
+                meta.appendChild(totalSpan);
+                meta.appendChild(timeSpan);
+
+                // 操作按鈕列
+                const actionBox = document.createElement("div");
+                actionBox.className = "flex items-center space-x-2 pt-1";
+
+                const actionConfig = STATUS_ACTIONS[order.status];
+                if (actionConfig) {
+                    const nextBtn = document.createElement("button");
+                    nextBtn.className = `flex-1 py-2 px-3 rounded-xl text-xs font-bold shadow transition active:scale-95 ${actionConfig.btnClass}`;
+                    nextBtn.textContent = actionConfig.btnText;
+                    nextBtn.onclick = () => updateOrderStatus(order.order_id, actionConfig.next);
+                    actionBox.appendChild(nextBtn);
+                }
+
+                if (order.status !== "COMPLETED" && order.status !== "CANCELLED") {
+                    const cancelBtn = document.createElement("button");
+                    cancelBtn.className = "px-3 py-2 bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-700 rounded-xl text-xs font-bold transition";
+                    cancelBtn.textContent = "取消";
+                    cancelBtn.onclick = () => {
+                        if (confirm(`確定要取消訂單 #${order.order_number} 嗎？`)) {
+                            updateOrderStatus(order.order_id, "CANCELLED");
+                        }
+                    };
+                    actionBox.appendChild(cancelBtn);
+                }
+
+                card.appendChild(header);
+                card.appendChild(itemList);
+                card.appendChild(meta);
+                card.appendChild(actionBox);
+
+                container.appendChild(card);
+            });
+        }
+
+        async function updateOrderStatus(orderId, newStatus) {
+            try {
+                const res = await fetch(`${CONFIG.API_BASE}/orders/${orderId}/status`, {
+                    method: "PATCH",
+                    headers: getHeaders(),
+                    body: JSON.stringify({ status: newStatus })
+                });
+
+                if (res.status === 401 || res.status === 403) {
+                    logout();
+                    return;
+                }
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    alert(`更新失敗：${data.detail || res.status}`);
+                    return;
+                }
+
+                fetchOrders(true);
+            } catch (err) {
+                alert(`網路異常：${err.message}`);
+            }
+        }
+
+        function renderAdminItems(items) {
+            const container = document.getElementById("adminItemsList");
+            container.innerHTML = '';
+
+            items.forEach(item => {
+                const row = document.createElement("div");
+                row.className = "flex items-center justify-between p-2.5 bg-slate-900/80 border border-slate-700/60 rounded-xl text-xs";
+
+                const nameDiv = document.createElement("div");
+                nameDiv.className = "font-semibold text-slate-200";
+                nameDiv.textContent = item.name;
+
+                const toggleBtn = document.createElement("button");
+                toggleBtn.className = item.is_available 
+                    ? "px-3 py-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-bold rounded-lg hover:bg-emerald-500/30 transition text-[11px]"
+                    : "px-3 py-1 bg-rose-500/20 border border-rose-500/40 text-rose-400 font-bold rounded-lg hover:bg-rose-500/30 transition text-[11px]";
+                
+                toggleBtn.textContent = item.is_available ? "販售中" : "暫停販售";
+                toggleBtn.onclick = () => toggleItemStatus(item.id);
+
+                row.appendChild(nameDiv);
+                row.appendChild(toggleBtn);
+                container.appendChild(row);
+            });
+        }
+
+        async function toggleItemStatus(itemId) {
+            try {
+                const res = await fetch(`${CONFIG.API_BASE}/items/${itemId}/toggle`, {
+                    method: "PATCH",
+                    headers: getHeaders()
+                });
+
+                if (res.status === 401 || res.status === 403) {
+                    logout();
+                    return;
+                }
+
+                if (!res.ok) {
+                    alert("更新失敗");
+                    return;
+                }
+
+                fetchAdminItems();
+            } catch (err) {
+                alert("網路異常");
+            }
+        }
+
+        function getStatusStyle(status) {
+            switch(status) {
+                case "PENDING": return "bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                case "IN_PROGRESS": return "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
+                case "READY": return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                case "COMPLETED": return "bg-slate-700 text-slate-400";
+                case "CANCELLED": return "bg-rose-500/20 text-rose-400 border border-rose-500/30";
+                default: return "bg-slate-700 text-slate-300";
+            }
+        }
+
+        function getStatusText(status) {
+            switch(status) {
+                case "PENDING": return "⏳ 待備餐/待核對";
+                case "IN_PROGRESS": return "🔥 製作中";
+                case "READY": return "✅ 可取餐";
+                case "COMPLETED": return "🎉 已完成";
+                case "CANCELLED": return "❌ 已取消";
+                default: return status;
+            }
+        }
+
+        checkAuth();
+    </script>
+</body>
+</html>
