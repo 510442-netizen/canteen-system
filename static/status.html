@@ -15,7 +15,7 @@
     <main class="max-w-md mx-auto p-4 space-y-4">
         <!-- 手動查詢欄 -->
         <div class="bg-white p-3 rounded-xl shadow-sm border flex gap-2">
-            <input type="number" id="searchOrderId" placeholder="輸入訂單編號 (例: 101)" class="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            <input type="number" id="searchOrderId" placeholder="輸入訂單流水號 ID (例: 1)" class="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
             <button onclick="manualSearch()" class="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow hover:bg-indigo-700">查詢</button>
         </div>
 
@@ -42,7 +42,6 @@
         }
 
         function init() {
-            // 優先從網址 URL 抓取，如果沒有則從快取 localStorage 讀取
             let id = getQueryParam('id') || getQueryParam('order_id');
             
             if (!id) {
@@ -51,7 +50,7 @@
 
             if (id) {
                 currentOrderId = id;
-                localStorage.setItem('my_last_order_id', id); // 寫入快取保護
+                localStorage.setItem('my_last_order_id', id);
                 document.getElementById('searchOrderId').value = id;
                 fetchOrderStatus();
                 startPolling();
@@ -92,18 +91,18 @@
 
         function renderStatusCard(order) {
             const statusMap = {
-                'pending': { text: '⏳ 收到訂單，等待製作', color: 'bg-amber-100 text-amber-800 border-amber-300' },
-                'preparing': { text: '🍳 廚房製作中', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-                'ready': { text: '🎉 餐點已完成，請憑單號取餐！', color: 'bg-green-100 text-green-800 border-green-300 animate-pulse' },
-                'completed': { text: '✅ 已完成交付', color: 'bg-gray-100 text-gray-600 border-gray-300' },
-                'cancelled': { text: '❌ 訂單已取消', color: 'bg-red-100 text-red-800 border-red-300' }
+                'PENDING': { text: '⏳ 收到訂單，等待製作', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+                'IN_PROGRESS': { text: '🍳 廚房製作中', color: 'bg-blue-100 text-blue-800 border-blue-300' },
+                'READY': { text: '🎉 餐點已完成，請憑單號取餐！', color: 'bg-green-100 text-green-800 border-green-300 animate-pulse' },
+                'COMPLETED': { text: '✅ 已完成交付', color: 'bg-gray-100 text-gray-600 border-gray-300' },
+                'CANCELLED': { text: '❌ 訂單已取消', color: 'bg-red-100 text-red-800 border-red-300' }
             };
 
             const statusInfo = statusMap[order.status] || { text: order.status, color: 'bg-gray-100 text-gray-800' };
 
             const itemsHtml = (order.items || []).map(item => `
                 <div class="flex justify-between text-sm py-1 border-b border-gray-100 last:border-none">
-                    <span class="text-gray-700">${item.item_name || item.name} x ${item.quantity}</span>
+                    <span class="text-gray-700">${item.name} x ${item.quantity}</span>
                     <span class="font-bold text-gray-900">NT$ ${item.price * item.quantity}</span>
                 </div>
             `).join('');
@@ -112,12 +111,12 @@
                 <div class="space-y-4 text-left">
                     <div class="flex justify-between items-center pb-2 border-b">
                         <div>
-                            <span class="text-xs text-gray-400">訂單編號</span>
-                            <h2 class="text-2xl font-extrabold text-indigo-600">#${order.id}</h2>
+                            <span class="text-xs text-gray-400">取餐號碼</span>
+                            <h2 class="text-2xl font-extrabold text-indigo-600">#${order.order_number || order.order_id}</h2>
                         </div>
                         <div class="text-right">
                             <span class="text-xs text-gray-400">顧客資訊</span>
-                            <p class="font-bold text-gray-800 text-sm">${order.customer_name} (末 ${order.customer_phone})</p>
+                            <p class="font-bold text-gray-800 text-sm">${order.customer_name} (末 ${order.phone_suffix})</p>
                         </div>
                     </div>
 
