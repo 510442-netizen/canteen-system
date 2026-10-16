@@ -3,371 +3,233 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>園遊會美食點餐</title>
+    <title>園遊會線上點餐</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen pb-32">
-    <div class="max-w-md mx-auto bg-white min-h-screen shadow-xl flex flex-col relative">
-        
-        <header class="bg-gradient-to-r from-indigo-600 to-violet-600 text-white p-5 sticky top-0 z-20 shadow-md">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-xl font-extrabold tracking-tight">🎪 美味攤位線上點餐</h1>
-                    <p class="text-xs text-indigo-100 mt-0.5">掃碼即點 • 免排隊備餐</p>
-                </div>
-                <span class="bg-white/20 text-white text-xs px-2.5 py-1 rounded-full font-medium border border-white/30 backdrop-blur-sm">線上營業中</span>
-            </div>
-        </header>
+<body class="bg-gray-100 min-h-screen pb-24">
+    <!-- 橫幅：若有進行中訂單自動顯示 -->
+    <div id="recentOrderBanner" class="hidden bg-amber-500 text-white px-4 py-2.5 text-center text-sm font-bold flex justify-between items-center shadow-md sticky top-0 z-40">
+        <span>您有一筆進行中的訂單！</span>
+        <a id="recentOrderLink" href="#" class="bg-white text-amber-600 px-3 py-1 rounded-full text-xs font-bold hover:bg-amber-100 transition">查看進度 →</a>
+    </div>
 
-        <!-- 錯誤提示區 (含網路逾時安全重試引導與 409 手動重置) -->
-        <div id="errorBanner" class="hidden bg-rose-50 border-l-4 border-rose-500 p-3.5 text-rose-700 text-xs font-medium sticky top-[68px] z-10 shadow-sm transition-all">
-            <div class="flex flex-col space-y-2">
-                <div class="flex justify-between items-start">
-                    <span id="errorMessage" class="leading-relaxed"></span>
-                    <button onclick="hideError()" class="text-rose-400 hover:text-rose-600 font-bold ml-2 text-base">✕</button>
-                </div>
-                <button id="resetKeyBtn" onclick="forceNewOrderKey()" class="hidden self-start px-2.5 py-1 bg-rose-600 text-white text-[11px] font-bold rounded shadow hover:bg-rose-700 transition">
-                    🔄 確認內容已修正，開啟全新訂單
-                </button>
-            </div>
+    <header class="bg-indigo-600 text-white p-4 shadow-lg text-center">
+        <h1 class="text-2xl font-bold">🍔 園遊會美食點餐</h1>
+        <p class="text-xs text-indigo-200 mt-1">菜單與庫存即時同步中</p>
+    </header>
+
+    <main class="max-w-md mx-auto p-4">
+        <div id="menuContainer" class="space-y-4">
+            <p class="text-center text-gray-500 py-8">載入菜單中...</p>
         </div>
+    </main>
 
-        <section class="p-4 bg-slate-50 border-b border-slate-200">
-            <div class="flex items-center justify-between mb-2">
-                <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider">1. 取餐身分識別</h2>
-                <span class="text-[10px] text-rose-500 font-semibold">* 必填項</span>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
+    <!-- 懸浮購物車欄 -->
+    <div id="cartBar" class="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-2xl max-w-md mx-auto hidden z-30">
+        <div class="flex justify-between items-center mb-2">
+            <span class="font-bold text-gray-700">已選餐點 (<span id="cartCount">0</span>)</span>
+            <span class="text-xl font-extrabold text-indigo-600">NT$ <span id="cartTotal">0</span></span>
+        </div>
+        <button onclick="openCheckoutModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-lg shadow-md transition">
+            前往結帳 / 送出訂單
+        </button>
+    </div>
+
+    <!-- 結帳彈窗 -->
+    <div id="checkoutModal" class="fixed inset-0 bg-black/50 hidden justify-center items-end sm:items-center p-4 z-50">
+        <div class="bg-white w-full max-w-md rounded-2xl p-6 space-y-4 shadow-2xl">
+            <h2 class="text-xl font-bold text-gray-800">確認訂單資訊</h2>
+            <div id="modalCartList" class="max-h-40 overflow-y-auto divide-y text-sm text-gray-600"></div>
+            <div class="space-y-3 pt-2">
                 <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">姓名 / 綽號</label>
-                    <input type="text" id="customerName" placeholder="例如：小明" maxlength="20"
-                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white">
+                    <label class="block text-xs font-bold text-gray-600 mb-1">顧客姓名 / 暱稱 *</label>
+                    <input type="text" id="custName" placeholder="例如：王小明" class="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">手機末 3~4 碼</label>
-                    <input type="tel" id="phoneSuffix" placeholder="例如：123" maxlength="4"
-                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white">
+                    <label class="block text-xs font-bold text-gray-600 mb-1">電話末三碼 (取餐核對用) *</label>
+                    <input type="text" id="custPhone" maxlength="3" placeholder="例如：567" class="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
             </div>
-        </section>
-
-        <section class="p-4 flex-1">
-            <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">2. 選擇餐點與數量</h2>
-            <div id="itemList" class="space-y-3">
-                <div class="animate-pulse space-y-3">
-                    <div class="h-20 bg-slate-100 rounded-xl"></div>
-                    <div class="h-20 bg-slate-100 rounded-xl"></div>
-                </div>
+            <div class="flex gap-2 pt-2">
+                <button onclick="closeCheckoutModal()" class="w-1/3 bg-gray-200 text-gray-700 py-2.5 rounded-lg font-bold text-sm">取消</button>
+                <button id="submitBtn" onclick="submitOrder()" class="w-2/3 bg-indigo-600 text-white py-2.5 rounded-lg font-bold text-sm shadow">確認送出</button>
             </div>
-        </section>
-
-        <div class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-200 p-4 shadow-2xl flex items-center justify-between z-30">
-            <div>
-                <div class="text-[11px] font-semibold text-slate-400">預計消費金額 / 點數</div>
-                <div class="text-lg font-black text-indigo-600">
-                    $<span id="totalPrice">0</span> <span class="text-xs font-normal text-slate-400">/</span> <span id="totalPoints" class="text-indigo-500">0</span> <span class="text-xs font-normal text-indigo-400">點</span>
-                </div>
-            </div>
-            <button id="submitBtn" onclick="submitOrder()" 
-                class="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-indigo-200 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center space-x-2">
-                <span>送出訂單</span>
-            </button>
         </div>
     </div>
 
     <script>
-        const currentPort = window.location.port;
-        const defaultApiHost = (currentPort === '5500' || currentPort === '3000' || currentPort === '5000') 
-            ? `${window.location.protocol}//${window.location.hostname}:8000/api`
-            : `/api`;
+        let menuItems = [];
+        let cart = {}; // { itemId: quantity }
 
-        const CONFIG = {
-            API_BASE: window.ENV_API_BASE || defaultApiHost
-        };
-
-        let itemsData = [];
-        let cart = {}; 
-        let isSubmitting = false;
-
-        function getIdempotencyKey() {
-            let key = sessionStorage.getItem("checkout_idempotency_key");
-            if (!key) {
-                key = "key_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
-                sessionStorage.setItem("checkout_idempotency_key", key);
-            }
-            return key;
-        }
-
-        function resetIdempotencyKey() {
-            sessionStorage.removeItem("checkout_idempotency_key");
-        }
-
-        function forceNewOrderKey() {
-            const confirmed = confirm(
-                "⚠️ 注意：若您剛才已完成下單或已付款，請直接前往追蹤頁，切勿重複下單。\n\n" +
-                "您確定要放棄當前的結帳 Key，並重新建立一筆全新訂單嗎？"
-            );
-            if (confirmed) {
-                resetIdempotencyKey();
-                getIdempotencyKey();
-                hideError();
-                showError("已成功開啟全新訂單 Key，請再次點擊「送出訂單」");
+        // 檢查快取是否有未完成的近期訂單
+        function checkRecentOrder() {
+            const lastOrderId = localStorage.getItem('my_last_order_id');
+            if (lastOrderId) {
+                const banner = document.getElementById('recentOrderBanner');
+                const link = document.getElementById('recentOrderLink');
+                link.href = `status.html?id=${lastOrderId}`;
+                banner.classList.remove('hidden');
             }
         }
 
-        window.addEventListener("pageshow", (event) => {
-            if (event.persisted && !isSubmitting) {
-                setFormDisabled(false);
-                const btn = document.getElementById("submitBtn");
-                if (btn) btn.textContent = "送出訂單";
-            }
-        });
-
-        function showError(msg, isConflict = false) {
-            const banner = document.getElementById("errorBanner");
-            document.getElementById("errorMessage").textContent = msg;
-            
-            const resetBtn = document.getElementById("resetKeyBtn");
-            if (isConflict) {
-                resetBtn.classList.remove("hidden");
-            } else {
-                resetBtn.classList.add("hidden");
-            }
-
-            banner.classList.remove("hidden");
-        }
-
-        function hideError() {
-            document.getElementById("errorBanner").classList.add("hidden");
-        }
-
-        async function safeFetchJson(url, options = {}) {
-            const res = await fetch(url, options);
-            const contentType = res.headers.get("content-type") || "";
-            
-            let data = null;
-            if (contentType.includes("application/json")) {
-                data = await res.json();
-            } else {
-                const text = await res.text();
-                data = { detail: text.substring(0, 100) };
-            }
-
-            if (!res.ok) {
-                const err = new Error(data.detail || `請求失敗 (HTTP ${res.status})`);
-                err.status = res.status;
-                throw err;
-            }
-            return data;
-        }
-
-        async function fetchItems() {
-            hideError();
-            const container = document.getElementById("itemList");
-            container.innerHTML = `
-                <div class="animate-pulse space-y-3">
-                    <div class="h-20 bg-slate-100 rounded-xl"></div>
-                    <div class="h-20 bg-slate-100 rounded-xl"></div>
-                </div>`;
-
+        async function fetchMenu() {
             try {
-                itemsData = await safeFetchJson(`${CONFIG.API_BASE}/items`);
-                renderItems();
-            } catch (err) {
-                container.innerHTML = '';
-                const errBox = document.createElement("div");
-                errBox.className = "text-center py-8 bg-rose-50 rounded-xl border border-rose-100 p-4";
-                
-                const title = document.createElement("p");
-                title.className = "text-rose-600 text-sm font-bold";
-                title.textContent = "餐點載入失敗";
-
-                const desc = document.createElement("p");
-                desc.className = "text-rose-400 text-xs mt-1 mb-3";
-                desc.textContent = err.message;
-
-                const retryBtn = document.createElement("button");
-                retryBtn.className = "px-4 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-lg shadow hover:bg-rose-700 transition";
-                retryBtn.textContent = "↻ 重新載入餐點";
-                retryBtn.onclick = fetchItems;
-
-                errBox.appendChild(title);
-                errBox.appendChild(desc);
-                errBox.appendChild(retryBtn);
-                container.appendChild(errBox);
+                const res = await fetch('/api/items');
+                if (!res.ok) return;
+                menuItems = await res.json();
+                renderMenu();
+            } catch (e) {
+                console.error("載入菜單失敗:", e);
             }
         }
 
-        function renderItems() {
-            const container = document.getElementById("itemList");
-            container.innerHTML = '';
-
-            if (itemsData.length === 0) {
-                const empty = document.createElement("div");
-                empty.className = "text-center text-slate-400 py-10 text-sm";
-                empty.textContent = "目前無上架商品";
-                container.appendChild(empty);
+        function renderMenu() {
+            const container = document.getElementById('menuContainer');
+            if (!menuItems || menuItems.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500 py-8">目前尚無上架餐點</p>';
                 return;
             }
 
-            itemsData.forEach(item => {
+            container.innerHTML = menuItems.map(item => {
                 const qty = cart[item.id] || 0;
-                const isMax = qty >= 50;
+                const isAvailable = item.available;
 
-                const card = document.createElement("div");
-                card.className = "flex items-center justify-between p-3.5 border border-slate-200 rounded-xl bg-white shadow-sm hover:border-indigo-100 transition";
+                return `
+                    <div class="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center ${!isAvailable ? 'opacity-60 bg-gray-50' : ''}">
+                        <div>
+                            <h3 class="font-bold text-gray-800 text-lg">${item.name}</h3>
+                            <p class="text-indigo-600 font-extrabold text-sm mt-0.5">NT$ ${item.price}</p>
+                            ${!isAvailable ? '<span class="inline-block mt-1 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold">已售完 / 暫停供應</span>' : ''}
+                        </div>
+                        <div>
+                            ${isAvailable ? `
+                                <div class="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+                                    <button onclick="updateCart(${item.id}, -1)" class="w-8 h-8 rounded-md bg-white shadow-sm text-gray-700 font-bold flex justify-center items-center hover:bg-gray-200 text-lg">-</button>
+                                    <span class="w-6 text-center font-bold text-gray-800">${qty}</span>
+                                    <button onclick="updateCart(${item.id}, 1)" class="w-8 h-8 rounded-md bg-indigo-600 shadow-sm text-white font-bold flex justify-center items-center hover:bg-indigo-700 text-lg">+</button>
+                                </div>
+                            ` : `
+                                <span class="text-xs text-gray-400 font-bold px-3 py-1 bg-gray-200 rounded-lg">停售中</span>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
-                const infoDiv = document.createElement("div");
-                infoDiv.className = "pr-2";
-
-                const nameDiv = document.createElement("div");
-                nameDiv.className = "font-bold text-slate-800 text-sm";
-                nameDiv.textContent = item.name;
-
-                const priceDiv = document.createElement("div");
-                priceDiv.className = "text-xs text-slate-500 mt-1";
-                priceDiv.textContent = `NT$ ${item.price} (${item.points} 點)`;
-
-                infoDiv.appendChild(nameDiv);
-                infoDiv.appendChild(priceDiv);
-
-                const controlDiv = document.createElement("div");
-                controlDiv.className = "flex items-center space-x-2 bg-slate-50 p-1 rounded-lg border border-slate-100";
-
-                const minusBtn = document.createElement("button");
-                minusBtn.className = "w-7 h-7 rounded-md bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100 disabled:opacity-30 transition text-xs";
-                minusBtn.textContent = "－";
-                minusBtn.disabled = (qty === 0 || isSubmitting);
-                minusBtn.onclick = () => updateQty(item.id, -1);
-
-                const qtySpan = document.createElement("span");
-                qtySpan.className = "w-6 text-center font-extrabold text-sm text-slate-800";
-                qtySpan.textContent = qty;
-
-                const plusBtn = document.createElement("button");
-                plusBtn.className = "w-7 h-7 rounded-md bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-30 transition text-xs";
-                plusBtn.textContent = "＋";
-                plusBtn.disabled = (isMax || isSubmitting);
-                plusBtn.onclick = () => updateQty(item.id, 1);
-
-                controlDiv.appendChild(minusBtn);
-                controlDiv.appendChild(qtySpan);
-                controlDiv.appendChild(plusBtn);
-
-                card.appendChild(infoDiv);
-                card.appendChild(controlDiv);
-                container.appendChild(card);
-            });
-
-            calculateTotal();
+            updateCartBar();
         }
 
-        function updateQty(itemId, delta) {
-            hideError();
-
-            const current = cart[itemId] || 0;
-            const updated = current + delta;
-
-            if (updated <= 0) {
+        function updateCart(itemId, delta) {
+            const currentQty = cart[itemId] || 0;
+            const newQty = currentQty + delta;
+            if (newQty <= 0) {
                 delete cart[itemId];
             } else {
-                if (updated > 50) {
-                    showError("單項餐點單次上限 50 份");
-                    return;
-                }
-                cart[itemId] = updated;
+                cart[itemId] = newQty;
             }
-            renderItems();
+            renderMenu();
         }
 
-        function calculateTotal() {
-            let price = 0, points = 0;
-            Object.keys(cart).forEach(id => {
-                const item = itemsData.find(i => i.id == id);
-                if (item) {
-                    price += item.price * cart[id];
-                    points += item.points * cart[id];
+        function updateCartBar() {
+            let count = 0;
+            let total = 0;
+
+            for (let itemId in cart) {
+                const item = menuItems.find(i => i.id == itemId);
+                if (item && item.available) {
+                    count += cart[itemId];
+                    total += item.price * cart[itemId];
+                } else {
+                    delete cart[itemId]; // 若餐點已停售，自動從購物車移除
                 }
-            });
-            document.getElementById("totalPrice").textContent = price;
-            document.getElementById("totalPoints").textContent = points;
+            }
+
+            const cartBar = document.getElementById('cartBar');
+            if (count > 0) {
+                cartBar.classList.remove('hidden');
+                document.getElementById('cartCount').innerText = count;
+                document.getElementById('cartTotal').innerText = total;
+            } else {
+                cartBar.classList.add('hidden');
+            }
         }
 
-        function setFormDisabled(disabled) {
-            isSubmitting = disabled;
-            document.getElementById("customerName").disabled = disabled;
-            document.getElementById("phoneSuffix").disabled = disabled;
-            document.getElementById("submitBtn").disabled = disabled;
-            renderItems();
+        function openCheckoutModal() {
+            const list = document.getElementById('modalCartList');
+            list.innerHTML = Object.keys(cart).map(id => {
+                const item = menuItems.find(i => i.id == id);
+                return `<div class="flex justify-between py-1.5">
+                    <span>${item.name} x ${cart[id]}</span>
+                    <span class="font-bold">NT$ ${item.price * cart[id]}</span>
+                </div>`;
+            }).join('');
+            document.getElementById('checkoutModal').classList.remove('hidden');
+            document.getElementById('checkoutModal').classList.add('flex');
+        }
+
+        function closeCheckoutModal() {
+            document.getElementById('checkoutModal').classList.add('hidden');
+            document.getElementById('checkoutModal').classList.remove('flex');
         }
 
         async function submitOrder() {
-            hideError();
-            const nameInput = document.getElementById("customerName");
-            const phoneInput = document.getElementById("phoneSuffix");
+            const name = document.getElementById('custName').value.trim();
+            const phone = document.getElementById('custPhone').value.trim();
 
-            const name = nameInput.value.trim();
-            const phone = phoneInput.value.trim();
-
-            if (!name) {
-                showError("請填寫取餐姓名或綽號");
-                nameInput.focus();
-                return;
-            }
-            if (!/^\d{3,4}$/.test(phone)) {
-                showError("手機末碼請填寫 3 至 4 位純數字");
-                phoneInput.focus();
+            if (!name || !phone) {
+                alert('請填寫姓名與電話末三碼！');
                 return;
             }
 
-            const orderItems = Object.keys(cart).map(id => ({
+            const items = Object.keys(cart).map(id => ({
                 item_id: parseInt(id),
                 quantity: cart[id]
             }));
 
-            if (orderItems.length === 0) {
-                showError("請至少選擇一項餐點");
-                return;
-            }
-
-            setFormDisabled(true);
-            const btn = document.getElementById("submitBtn");
-            btn.textContent = "訂單傳送中...";
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerText = '處理中...';
 
             try {
-                // 保持當前 idempotency_key 進行請求
-                const data = await safeFetchJson(`${CONFIG.API_BASE}/orders`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                const res = await fetch('/api/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        idempotency_key: getIdempotencyKey(),
                         customer_name: name,
-                        phone_suffix: phone,
-                        items: orderItems
+                        customer_phone: phone,
+                        items: items
                     })
                 });
 
-                // 成功取得訂單回應後，安心清除 Key
-                resetIdempotencyKey();
-                
-                // 憑證儲存於 sessionStorage，保護隱私
-                sessionStorage.setItem(`order_token_${data.order_id}`, data.order_token);
-
-                window.location.href = `status.html?order_id=${data.order_id}&token=${data.order_token}`;
-            } catch (err) {
-                const is409 = (err.status === 409);
-                if (is409) {
-                    showError("此結帳 Key 已存在既有訂單，但姓名或餐點不符合。若您已下單請至追蹤頁；否則請點擊下方按鈕開啟全新訂單。", true);
-                } else {
-                    // 網路逾時或連線異常時，保留 idempotency_key 引導顧客直接重試
-                    showError(`連線異常或逾時 (${err.message})。請檢查網路後直接再次點擊「送出訂單」，系統將自動核對，絕不重複扣款/下單。`);
+                if (!res.ok) {
+                    const err = await res.json();
+                    alert('送出失敗：' + (err.detail || '餐點可能已售完，請重新確認！'));
+                    fetchMenu();
+                    closeCheckoutModal();
+                    return;
                 }
-                setFormDisabled(false);
-                btn.textContent = "送出訂單";
+
+                const data = await res.json();
+                const orderId = data.id || data.order_id;
+                
+                // 儲存訂單編號到瀏覽器快取 (localStorage)
+                localStorage.setItem('my_last_order_id', orderId);
+
+                alert(`訂單送出成功！您的單號是 #${orderId}`);
+                window.location.href = `status.html?id=${orderId}`;
+
+            } catch (e) {
+                alert('網路連線異常，請稍後再試！');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = '確認送出';
             }
         }
 
-        fetchItems();
+        // 初始化與每 10 秒自動刷新菜單
+        checkRecentOrder();
+        fetchMenu();
+        setInterval(fetchMenu, 10000);
     </script>
 </body>
 </html>
